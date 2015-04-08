@@ -1,0 +1,222 @@
+<?php
+
+
+  function bulk_code_menu() {
+          $items = array();
+          $items["bulk_code"] = array(
+              "title"  => "Bulk code manages",
+              "page callback" => "bulk_code_all",
+              "access arguments" => array("bulk code approve-disapprove"),
+              "type" => MENU_NORMAL_ITEM
+          );
+          $items["bulk_code/ajax"] = array(
+              "page callback" => "bulk_code_ajax",
+              "access callback" => TRUE,
+              "type" => MENU_CALLBACK
+          );
+          $items["bulk_code/books/ajax"] = array(
+              "page callback" => "bulk_code_books_ajax",
+              "access callback" => TRUE,
+              "type" => MENU_CALLBACK
+          );          
+           return $items;
+  }  
+
+  function bulk_code_perm() {
+        return array(
+            "bulk code approve-disapprove",
+        );
+  }
+
+function bulk_code_all(){      
+  $book_titles_q = db_query("
+    SELECT * FROM {textbook_companion_preference} WHERE approval_status = 1 OR approval_status = 3 ORDER BY book ASC
+    ");
+  
+        $page_content .= "";
+        $page_content .= "<script src='http://ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js'></script>";
+        $page_content .= "<div id = 'bulk_code_manage'>";
+        $page_content .= "";
+        $page_content .= "<form id='form_bulk_approve' method='post' class= 'form_comments'>";
+        //$page_content .= "<input type='hidden' name='postid' value=".$id.">";
+        $page_content .= "<label>";
+        $page_content .= "<span>Title of the Book: </span><br><br>";
+        $page_content.= "<select id='select_book'><option value='0'>Please Select a book</option>";
+        while ($book_titles_data = db_fetch_object($book_titles_q))
+  {
+    $page_content.= "<option value='".$book_titles_data->id."'>".$book_titles_data->book . ' (Written by ' . $book_titles_data->author . ')'."</option>";
+  } 
+        $page_content .= "</select>"; 
+        $page_content .= "<div id= 'download_entire_book'></div>";
+        $page_content .= "<div id= 'download_entire_chapter'></div>";
+        $page_content .= "<div id= 'download_entire_example'></div>";
+        $page_content .= "<div id= 'disapprove_textrea'>";
+        $page_content .= "<label>If Dis-Approved please specify reason for Dis-Appr…</label>";
+        $page_content .= "<textarea id='dis_approve' rows='5' cols='60'></textarea></div>";
+        $page_content .= "<input type='submit' value='Submit' class= 'submit_form_bulk_approve' >";
+        $page_content .= "</form>";
+        $page_content .= "</div>";
+
+        return $page_content;
+  }
+
+      function bulk_code_ajax() {      
+      $data = "";
+      //$value =$_POST['value'];
+      if(isset($_POST['id']) && isset($_POST['type'])){
+      $type =mysql_real_escape_string($_POST['type']);
+      $id =mysql_real_escape_string($_POST['id']);
+      }
+      //$chapter_id = 
+      if($type== "select_book"){ 
+      $query= "
+      SELECT * FROM {textbook_companion_chapter} WHERE preference_id = %d ORDER BY number ASC
+      ";
+      $book_chapters_q= db_query($query, $id);
+      $data .= "<br>";      
+      $data .= "<span><a href= 'full_download/book/".$id."'>Download</a> (Download all the approved and unapproved examples of the entire book) </span><br>";
+      $data .= "<span><a href= 'textbook_companion/generate_book/".$id."/1'>Download PDF</a> (Download PDF of all the approved and unapproved examples of the entire book) </span><br>";
+      $data .= "<span><a href= 'textbook_companion/delete_book/".$id."'>Regenerate PDF</a> (Manually Regenerate PDF of the entire book) </span><br><br>";
+      $data .= "<input type='radio' class = 'form_action' name='approve_disaprave_book' value='1'>Approve Entire Book<br>";     
+      $data .= "<input type='radio'  class = 'form_action' name='approve_disaprave_book' value='4'>Delete Entire Book Including Proposal<br><br>";
+      echo $data;
+      exit();
+    }else {
+
+      $data .= "Please try again";
+       echo json_encode($data);
+      exit();
+    }
+    
+  }
+
+  function bulk_code_books_ajax() {
+    global $user;
+         $data .= "";
+        if(isset($_POST['pref_id']) && isset($_POST['action'])){
+        $pref_id = mysql_real_escape_string($_POST['pref_id']);
+        $action = mysql_real_escape_string($_POST['action']);
+        $disapproval_reason = mysql_real_escape_string($_POST['dis_approve_reason']);
+        }
+        if($action == 1)
+        {
+          $data .= "";
+              /* approving entire book */
+          $chapter_q = db_query("SELECT * FROM {textbook_companion_chapter} WHERE preference_id = %d", $pref_id);
+          while ($chapter_data = db_fetch_object($chapter_q))
+          {
+            db_query("UPDATE {textbook_companion_example} SET approval_status = 1, approver_uid = %d WHERE chapter_id = %d AND approval_status = 0", $user->uid, $chapter_data->id);
+          } 
+              $email_subject = t('Your uploaded examples have been approved');
+              $email_body = t('Your all the uploaded examples for the book have been approved.');
+              if ($email_subject)
+            {
+              $email_to = $user->mail;
+              $param['standard']['subject'] = $email_subject;
+              $param['standard']['body'] = $email_body;
+              if (!drupal_mail('textbook_companion', 'standard', $email_to, language_default(), $param, variable_get('textbook_companion_from_email', NULL), TRUE))
+                  $data .='Error sending email message.';
+            }    
+            $data .= "Approved Entire Book";
+            echo $data;
+            exit();     
+                       
+        }elseif($action == 4){
+          $root_path = textbook_companion_path();
+              $data .= "";
+              /* check if dependency files are present */
+              $dep_q = db_query("SELECT * FROM {textbook_companion_dependency_files} WHERE preference_id = %d", $pref_id);
+              if ($dep_data = db_fetch_object($dep_q))
+              {
+                 $data = "Cannot delete book since it has dependency files that can be used by others. First delete the dependency files before deleing the Book.";
+                       echo $data;
+                       exit();
+               
+              }
+              if (delete_books($pref_id))
+              { 
+                  $dir_path = $root_path . $pref_id;
+                  if (is_dir($dir_path))
+                  {
+                      $res = rmdir($dir_path);
+                      if (!$res)
+                      {
+                          $data .= "Cannot delete Book directory : " . $dir_path . ". Please contact administrator.";       
+                           echo $data; 
+                           exit();                 
+                      }
+                  } else {
+                      $data = "Book directory not present : " . $dir_path . ". Skipping deleting book directory.";
+                       echo $data;
+                       exit();
+                  }
+                  /* deleting preference and proposal */
+                  $preference_q = db_query("SELECT * FROM {textbook_companion_preference} WHERE id = %d", $pref_id);
+                  $preference_data = db_fetch_object($preference_q);
+                  $proposal_id = $preference_data->proposal_id;
+                  db_query("DELETE FROM {textbook_companion_preference} WHERE proposal_id = %d", $proposal_id);
+                  db_query("DELETE FROM {textbook_companion_proposal} WHERE id = %d", $proposal_id);
+                  $data .= 'Deleted Book Proposal.';
+                  /* email */
+                  $email_subject = t('Your uploaded examples including the book proposal have been deleted');
+                  $email_body = t('Your all the uploaded examples including the book have been deleted permanently.
+
+Reason for deletion:
+
+' . $disapproval_reason); 
+          if ($email_subject)
+            {
+              $email_to = $user->mail;
+              $param['standard']['subject'] = $email_subject;
+              $param['standard']['body'] = $email_body;
+              if (!drupal_mail('textbook_companion', 'standard', $email_to, language_default(), $param, variable_get('textbook_companion_from_email', NULL), TRUE))
+                  $data .='Error sending email message.';
+                  echo $data;
+                   exit();   
+            }              
+                  
+              } else {
+                   $data .= "Error Dis-Approving and Deleting Entire Book."; 
+                   echo $data;
+                   exit();                 
+              }
+                                 
+            }      
+}
+
+  function bulk_code_init() {
+        drupal_add_js(drupal_get_path("module", "bulk_code") . "/js/bulk_code_ajax.js");        
+        drupal_add_js(drupal_get_path("module", "bulk_code") . "/js/jquery-1.4.1.min.js");
+        drupal_add_js(drupal_get_path("module", "bulk_code") . "/js/jquery-1.2.6.min.js");
+        
+        
+  }
+
+function delete_books($book_id)
+{
+  $status = TRUE;
+  $root_path = textbook_companion_path();
+
+  $preference_q = db_query("SELECT * FROM {textbook_companion_preference} WHERE id = %d", $book_id);
+  $preference_data = db_fetch_object($preference_q);
+  if (!$preference_data)
+  {
+    drupal_set_message('Invalid book.', 'error');
+    return FALSE;
+  }
+
+  /* delete chapters */
+  $chapter_q = db_query("SELECT * FROM {textbook_companion_chapter} WHERE preference_id = %d", $preference_data->id);
+  while ($chapter_data = db_fetch_object($chapter_q))
+  {
+    if (!delete_chapter($chapter_data->id))
+    {
+      $status = FALSE;
+    }
+  }
+  return $status;
+}
+
+?>
+
+

@@ -1,0 +1,8 @@
+name = bulk_code
+description = Module to bulk manage on book codes
+core = 6.x
+
+
+scripts[] = js/bulk_code_ajax.js
+scripts[] = js/jquery-1.4.1.min.js
+scripts[] = js/jquery,lightbox_me.js
