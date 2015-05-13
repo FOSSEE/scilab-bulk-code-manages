@@ -146,10 +146,38 @@ function bulk_code_all(){
                            exit();                 
                       }
                   } else {
-                      $data = "Book directory not present : " . $dir_path . ". Skipping deleting book directory.";
+                      $data = "Book directory not present : " . $dir_path . ". Skip deleting book directory.";
                        echo $data;
-                       exit();
-                  }
+                         $preference_q = db_query("SELECT * FROM {textbook_companion_preference} WHERE id = %d", $pref_id);
+                  $preference_data = db_fetch_object($preference_q);
+                  $proposal_id = $preference_data->proposal_id;
+                  db_query("DELETE FROM {textbook_companion_preference} WHERE proposal_id = %d", $proposal_id);
+                  db_query("DELETE FROM {textbook_companion_proposal} WHERE id = %d", $proposal_id);
+                  $data .= 'Deleted Book Proposal.';
+                  /* email */
+                  $email_subject = t('Your uploaded examples including the book proposal have been deleted');
+                  $email_body = t('Your all the uploaded examples including the book have been deleted permanently.
+
+Reason for deletion:
+
+' . $disapproval_reason); 
+          if ($email_subject)
+            {
+              $email_to = $user->mail;
+              $param['standard']['subject'] = $email_subject;
+              $param['standard']['body'] = $email_body;
+              if (!drupal_mail('textbook_companion', 'standard', $email_to, language_default(), $param, variable_get('textbook_companion_from_email', NULL), TRUE))
+                  $data .='Error sending email message.';
+                  echo $data;
+                   exit();   
+            }              
+                  
+              else {
+                   $data .= "Error Dis-Approving and Deleting Entire Book."; 
+                   echo $data;
+                   exit();                 
+              }
+                   }
                   /* deleting preference and proposal */
                   $preference_q = db_query("SELECT * FROM {textbook_companion_preference} WHERE id = %d", $pref_id);
                   $preference_data = db_fetch_object($preference_q);
